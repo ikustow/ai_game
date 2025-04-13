@@ -13,9 +13,9 @@ from agents import (
     AgentHooks,
     set_default_openai_key,
 )
-
+from api_main.middleware.firebase import save_guardian_output, save_orc_output, save_leader_output
 from .contex_agents import PersonContext, LEADER_INSTRUCTIONS, GUARDIAN_INSTRUCTIONS, ORC_INSTRUCTIONS
-
+from .models import GuardianOutput, OrcOutput, LeaderOutput
 
 # === Настройка окружения ===
 
@@ -29,40 +29,57 @@ set_default_openai_key(api_key)
 # === Пользовательские хуки ===
 
 class CustomAgentHooks(AgentHooks):
-    def __init__(self, display_name: str):
-        self.event_counter = 0
-        self.display_name = display_name
+    _session_id: str = "default_session"
+    _event_counters: dict[str, int] = {}
+
+    def __init__(self, display_name: str, session_id: str = "default_session"):
+        super().__init__()
+        self._display_name = display_name
+        CustomAgentHooks._session_id = session_id
+        if display_name not in CustomAgentHooks._event_counters:
+            CustomAgentHooks._event_counters[display_name] = 0
+
+    @property
+    def display_name(self) -> str:
+        return self._display_name
+
+    @classmethod
+    def set_session_id(cls, session_id: str) -> None:
+        cls._session_id = session_id
+
+    @classmethod
+    def get_session_id(cls) -> str:
+        return cls._session_id
+
+    @classmethod
+    def get_event_counter(cls, display_name: str) -> int:
+        return cls._event_counters.get(display_name, 0)
 
     async def on_tool_end(
         self, context: RunContextWrapper, agent: Agent, tool: Tool, result: str
     ) -> None:
-        self.event_counter += 1
-        print(
-            f"### ({self.display_name}) {self.event_counter}: Agent {agent.name} ended tool {tool.name} with result {result}"
-        )
+        CustomAgentHooks._event_counters[self._display_name] = CustomAgentHooks._event_counters.get(self._display_name, 0) + 1
+        if agent.name == "Leader":
+            output = LeaderOutput.model_validate_json(result)
+            save_leader_output(output, CustomAgentHooks._session_id)
+            
+        if tool.name == "guardian_eval":
+            output = GuardianOutput.model_validate_json(result)
+            save_guardian_output(output, CustomAgentHooks._session_id)
+        elif tool.name == "orc_eval":
+            output = OrcOutput.model_validate_json(result)
+            save_orc_output(output, CustomAgentHooks._session_id)
+       
 
 
 # === Агенты и Tools ===
-
-class GuardianOutput(BaseModel):
-    joke: str = Field(description="Шутка про потенциального противника")
-    attack: bool = Field(description="Атаковать или нет")
-    reason: str = Field(description="Почему вы так решили, кратко и в прямой речи")
-
-class OrcOutput(BaseModel):
-    attack: bool = Field(description="Атаковать или нет, всегда да")
-    reason: str = Field(description="Отвечай на орочьем языке тремя словами")
-
-class LeaderOutput(BaseModel):
-    attack: bool = Field(description="Атаковать или нет")
-    reason: str = Field(description="Почему вы так решили, кратко и в прямой речи к потенциальному противнику")
 
 # Guardian как tool
 guardian = Agent[PersonContext](
     name="Guardian",
     instructions=GUARDIAN_INSTRUCTIONS,
     model="gpt-4o",
-    hooks=CustomAgentHooks(display_name="Guardian"),
+    hooks=CustomAgentHooks(display_name="Guardian", session_id="default_session"),
     output_type=GuardianOutput,
 )
 
@@ -75,7 +92,7 @@ orc = Agent[PersonContext](
     name="Orc",
     instructions=ORC_INSTRUCTIONS,
     model="gpt-4o",
-    hooks=CustomAgentHooks(display_name="Orc"),
+    hooks=CustomAgentHooks(display_name="Orc", session_id="default_session"),
     output_type=OrcOutput,
 )   
 orc_tool = orc.as_tool(
@@ -88,12 +105,27 @@ leader = Agent[PersonContext](
     name="Leader",
     instructions=LEADER_INSTRUCTIONS + "\nUse guardian_eval when you need deeper magical analysis.",
     model="gpt-4o",
-    hooks=CustomAgentHooks(display_name="Leader"),
+    hooks=CustomAgentHooks(display_name="Leader", session_id="default_session"),
     tools=[guardian_tool, orc_tool],
     output_type=LeaderOutput,
 )
 
+
 # === Запуск ===
+
+class CustomRunner:
+    @classmethod
+    async def run(cls, context: Any, starting_agent: Agent, input: str, session_id: str = "default_session", **kwargs) -> RunResult:
+        # Update session_id for all hooks
+        CustomAgentHooks.set_session_id(session_id)
+        # Pass all arguments as keyword arguments
+        return await Runner.run(**{
+            "context": context,
+            "starting_agent": starting_agent,
+            "input": input,
+            **kwargs
+        })
+
 
 def main():
     """Main entry point for the application"""
@@ -115,7 +147,7 @@ def main():
     magical_affinity="Отсутствует"
     )
 
-    result = asyncio.run(Runner.run(
+    result = asyncio.run(CustomRunner.run(
         context=context,
         starting_agent=leader,
         input=f"Вы встретили потенциального противника: {context}. Он хочет узнать где король. Вы испугаетесь и поможете ему или атакуете?",
