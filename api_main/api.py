@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import asyncio
@@ -13,6 +14,19 @@ from agents import Agent, AgentHooks, RunContextWrapper, Tool
 
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "API is running"}
 
 
 class PersonContextRequest(BaseModel):
