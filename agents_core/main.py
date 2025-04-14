@@ -17,16 +17,16 @@ from api_main.middleware.firebase import save_guardian_output, save_orc_output, 
 from .contex_agents import PersonContext, LEADER_INSTRUCTIONS, GUARDIAN_INSTRUCTIONS, ORC_INSTRUCTIONS
 from .models import GuardianOutput, OrcOutput, LeaderOutput
 
-# === Настройка окружения ===
+# === Environment Setup ===
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
-    raise EnvironmentError("OPENAI_API_KEY не найден в переменных окружения. Проверьте файл .env")
+    raise EnvironmentError("OPENAI_API_KEY not found in environment variables. Check the .env file")
 set_default_openai_key(api_key)
 
 
-# === Пользовательские хуки ===
+# === Custom Hooks ===
 
 class CustomAgentHooks(AgentHooks):
     _session_id: str = "default_session"
@@ -72,9 +72,9 @@ class CustomAgentHooks(AgentHooks):
        
 
 
-# === Агенты и Tools ===
+# === Agents and Tools ===
 
-# Guardian как tool
+# Guardian as a tool
 guardian = Agent[PersonContext](
     name="Guardian",
     instructions=GUARDIAN_INSTRUCTIONS,
@@ -85,7 +85,7 @@ guardian = Agent[PersonContext](
 
 guardian_tool = guardian.as_tool(
     tool_name="guardian_eval",
-    tool_description="Оценивает кандидата и даёт рекомендации.",
+    tool_description="Evaluates the candidate and provides recommendations.",
 )
 
 orc = Agent[PersonContext](
@@ -97,10 +97,10 @@ orc = Agent[PersonContext](
 )   
 orc_tool = orc.as_tool(
     tool_name="orc_eval",
-    tool_description="Оценивает кандидата и даёт рекомендации.",
+    tool_description="Evaluates the candidate and provides recommendations.",
 )
 
-# Leader использует Guardian как инструмент
+# Leader uses Guardian as a tool
 leader = Agent[PersonContext](
     name="Leader",
     instructions=LEADER_INSTRUCTIONS + "\nUse guardian_eval when you need deeper magical analysis.",
@@ -111,7 +111,7 @@ leader = Agent[PersonContext](
 )
 
 
-# === Запуск ===
+# === Run ===
 
 class CustomRunner:
     @classmethod
@@ -130,30 +130,30 @@ class CustomRunner:
 def main():
     """Main entry point for the application"""
     context = PersonContext(
-    name="Кроган Железный Кулак",
+    name="Krogan Iron Fist",
     age=35,
     skills=[
-        "Мастерство владения двуручным мечом",
-        "Боевой раж",
-        "Тактика ближнего боя",
-        "Выносливость",
-        "Инстинкт хищника"
+        "Two-handed sword mastery",
+        "Battle rage",
+        "Close combat tactics",
+        "Endurance",
+        "Predator instinct"
     ],
     background=(
-        "Кроган вырос в суровых землях северных племён, где выживают лишь сильнейшие. "
-        "С юных лет он закалял своё тело и дух в бесконечных сражениях, "
-        "став живой легендой среди своего народа."
+        "Krogan grew up in the harsh lands of the northern tribes, where only the strongest survive. "
+        "From a young age, he hardened his body and spirit in endless battles, "
+        "becoming a living legend among his people."
     ),
-    magical_affinity="Отсутствует"
+    magical_affinity="None"
     )
 
     result = asyncio.run(CustomRunner.run(
         context=context,
         starting_agent=leader,
-        input=f"Вы встретили потенциального противника: {context}. Он хочет узнать где король. Вы испугаетесь и поможете ему или атакуете?",
+        input=f"You have encountered a potential opponent: {context}. He wants to know where the king is. Will you be scared and help him or attack?",
     ))
 
-    print("\n✨ Лидер оценил кандидата")
+    print("\n✨ Leader evaluated the candidate")
     print(result.final_output)
 
 
